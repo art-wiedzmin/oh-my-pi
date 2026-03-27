@@ -155,7 +155,7 @@ export class WelcomeComponent implements Component {
 
 		// Right column
 		const rightLines = [
-			` ${theme.bold(theme.fg("accent", "Tips"))}`,
+			` ${theme.bold(theme.fg("accent", "Tips"))} ${theme.fg("dim", "|") } ${theme.fg("customMessageLabel", "WiedzminVer")}`,
 			` ${theme.fg("dim", "?")}${theme.fg("muted", " for keyboard shortcuts")}`,
 			` ${theme.fg("dim", "#")}${theme.fg("muted", " for prompt actions")}`,
 			` ${theme.fg("dim", "/")}${theme.fg("muted", " for commands")}`,
