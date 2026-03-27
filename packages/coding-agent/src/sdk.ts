@@ -1036,9 +1036,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				rulebookRules.push(rule);
 			}
 		}
-		if (existingSession.injectedTtsrRules.length > 0) {
-			ttsrManager.restoreInjected(existingSession.injectedTtsrRules);
-		}
+		// Disabled: TTSR state is per-session, not restored across sessions
+		// if (existingSession.injectedTtsrRules.length > 0) {
+		// 	ttsrManager.restoreInjected(existingSession.injectedTtsrRules);
+		// }
 		return { ttsrManager, rulebookRules, alwaysApplyRules };
 	});
 

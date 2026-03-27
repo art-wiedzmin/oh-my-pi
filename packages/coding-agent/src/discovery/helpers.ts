@@ -408,12 +408,14 @@ export async function loadFilesFromDir<T>(
 		transform: (name: string, content: string, path: string, source: SourceMeta) => T | null;
 		/** Whether to recurse into subdirectories (default: false) */
 		recursive?: boolean;
+		/** Whether to respect .gitignore when scanning (default: false) */
+		gitignore?: boolean;
 	},
 ): Promise<LoadResult<T>> {
 	const items: T[] = [];
 	const warnings: string[] = [];
 	// Build glob pattern based on extensions and recursion
-	const { extensions, recursive = false } = options;
+	const { extensions, recursive = false, gitignore = false } = options;
 
 	let pattern: string;
 	if (extensions && extensions.length > 0) {
@@ -429,7 +431,7 @@ export async function loadFilesFromDir<T>(
 		const result = await glob({
 			pattern,
 			path: dir,
-			gitignore: true,
+			gitignore,
 			hidden: false,
 			fileType: FileType.File,
 		});
