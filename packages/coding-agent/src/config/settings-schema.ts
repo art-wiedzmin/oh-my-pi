@@ -425,6 +425,20 @@ export const SETTINGS_SCHEMA = {
 			description: "Use the session name color for the editor border and status line gap",
 		},
 	},
+	"statusLine.position": {
+		type: "enum",
+		values: ["top-border", "below-editor"] as const,
+		default: "top-border",
+		ui: {
+			tab: "appearance",
+			label: "Status Line Position",
+			description: "Where to show the status line: in the editor top border or below the editor",
+			options: [
+				{ value: "top-border", label: "Top Border", description: "Embedded in editor top border (classic)" },
+				{ value: "below-editor", label: "Below Editor", description: "Multi-line status below the input area" },
+			],
+		},
+	},
 	"tools.artifactSpillThreshold": {
 		type: "number",
 		default: 50,
@@ -2812,6 +2826,9 @@ export type StatusLinePreset = SettingValue<"statusLine.preset">;
 
 /** Status line separator style - derived from schema */
 export type StatusLineSeparatorStyle = SettingValue<"statusLine.separator">;
+
+/** Status line position - derived from schema */
+export type StatusLinePosition = SettingValue<"statusLine.position">;
 
 /** Tree selector filter mode - derived from schema */
 export type TreeFilterMode = SettingValue<"treeFilterMode">;

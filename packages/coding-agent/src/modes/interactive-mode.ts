@@ -227,6 +227,7 @@ export class InteractiveMode implements InteractiveModeContext {
 	hookWidgetContainerAbove: Container;
 	hookWidgetContainerBelow: Container;
 	statusLine: StatusLineComponent;
+	belowEditorContainer: Container;
 
 	isInitialized = false;
 	isBackgrounded = false;
@@ -380,6 +381,7 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.hookWidgetContainerBelow = new Container();
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor);
+		this.belowEditorContainer = new Container();
 		this.statusLine = new StatusLineComponent(session);
 		this.statusLine.setAutoCompactEnabled(session.autoCompactionEnabled);
 
@@ -507,10 +509,19 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.ui.addChild(this.statusContainer);
 		this.ui.addChild(this.todoContainer);
 		this.ui.addChild(this.btwContainer);
-		this.ui.addChild(this.statusLine); // Only renders hook statuses (main status in editor border)
-		this.ui.addChild(this.hookWidgetContainerAbove);
-		this.ui.addChild(this.editorContainer);
-		this.ui.addChild(this.hookWidgetContainerBelow);
+		if (this.statusLine.getPosition() === "below-editor") {
+			// Status renders below editor; top border has no status content
+			this.ui.addChild(this.hookWidgetContainerAbove);
+			this.ui.addChild(this.editorContainer);
+			this.ui.addChild(this.hookWidgetContainerBelow);
+			this.belowEditorContainer.addChild(this.statusLine);
+			this.ui.addChild(this.belowEditorContainer);
+		} else {
+			this.ui.addChild(this.statusLine); // Only renders hook statuses (main status in editor border)
+			this.ui.addChild(this.hookWidgetContainerAbove);
+			this.ui.addChild(this.editorContainer);
+			this.ui.addChild(this.hookWidgetContainerBelow);
+		}
 		this.ui.setFocus(this.editor);
 
 		this.#inputController.setupKeyHandlers();
@@ -930,6 +941,11 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	updateEditorTopBorder(): void {
+		if (this.statusLine.getPosition() === "below-editor") {
+			// In below-editor mode, top border has no status content
+			this.editor.setTopBorder(undefined);
+			return;
+		}
 		const availableWidth = this.editor.getTopBorderAvailableWidth(this.ui.terminal.columns);
 		const topBorder = this.statusLine.getTopBorder(availableWidth);
 		this.editor.setTopBorder(topBorder);

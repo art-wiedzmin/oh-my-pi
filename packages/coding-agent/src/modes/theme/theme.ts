@@ -9,7 +9,7 @@ import {
 	highlightCode as nativeHighlightCode,
 	supportsLanguage as nativeSupportsLanguage,
 } from "@oh-my-pi/pi-natives";
-import type { EditorTheme, MarkdownTheme, SelectListTheme, SymbolTheme } from "@oh-my-pi/pi-tui";
+import type { EditorBorderStyle, EditorTheme, MarkdownTheme, SelectListTheme, SymbolTheme } from "@oh-my-pi/pi-tui";
 import { adjustHsv, getCustomThemesDir, isEnoent, logger } from "@oh-my-pi/pi-utils";
 import chalk from "chalk";
 import * as z from "zod/v4";
@@ -908,6 +908,7 @@ const themeJsonSchema = z.object({
 			overrides: z.record(z.string(), z.string()).optional(),
 		})
 		.optional(),
+	editorBorderStyle: z.enum(["box", "horizontal", "none"]).optional(),
 });
 
 type ThemeJson = z.infer<typeof themeJsonSchema>;
@@ -1233,6 +1234,7 @@ export class Theme {
 	#fgColors: Record<ThemeColor, string>;
 	#bgColors: Record<ThemeBg, string>;
 	#symbols: SymbolMap;
+	readonly editorBorderStyle?: EditorBorderStyle;
 
 	constructor(
 		fgColors: Record<ThemeColor, string | number>,
@@ -1240,7 +1242,9 @@ export class Theme {
 		private readonly mode: ColorMode,
 		private readonly symbolPreset: SymbolPreset,
 		symbolOverrides: Partial<Record<SymbolKey, string>>,
+		editorBorderStyle?: EditorBorderStyle,
 	) {
+		this.editorBorderStyle = editorBorderStyle;
 		this.#fgColors = {} as Record<ThemeColor, string>;
 		for (const [key, value] of Object.entries(fgColors) as [ThemeColor, string | number][]) {
 			this.#fgColors[key] = fgAnsi(value, mode);
@@ -1705,7 +1709,7 @@ function createTheme(themeJson: ThemeJson, options: CreateThemeOptions = {}): Th
 	// Extract symbol configuration - settings override takes precedence over theme
 	const symbolPreset: SymbolPreset = symbolPresetOverride ?? themeJson.symbols?.preset ?? "unicode";
 	const symbolOverrides = themeJson.symbols?.overrides ?? {};
-	return new Theme(fgColors, bgColors, colorMode, symbolPreset, symbolOverrides);
+	return new Theme(fgColors, bgColors, colorMode, symbolPreset, symbolOverrides, themeJson.editorBorderStyle);
 }
 
 async function loadTheme(name: string, options: CreateThemeOptions = {}): Promise<Theme> {
@@ -2399,6 +2403,7 @@ export function getEditorTheme(): EditorTheme {
 		selectList: getSelectListTheme(),
 		symbols: getSymbolTheme(),
 		hintStyle: (text: string) => theme.fg("dim", text),
+		editorBorderStyle: theme.editorBorderStyle,
 	};
 }
 

@@ -389,6 +389,11 @@
 			},
 			"additionalProperties": false
 		},
+		"editorBorderStyle": {
+			"type": "string",
+			"enum": ["box", "horizontal", "none"],
+			"description": "Editor input border style: box (full border), horizontal (top/bottom lines only), none (no border)"
+		},
 		"symbols": {
 			"type": "object",
 			"description": "Symbol configuration for UI glyphs and icons",

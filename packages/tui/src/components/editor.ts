@@ -281,11 +281,14 @@ interface LayoutLine {
 	cursorPos?: number;
 }
 
+export type EditorBorderStyle = "box" | "horizontal" | "none";
+
 export interface EditorTheme {
 	borderColor: (str: string) => string;
 	selectList: SelectListTheme;
 	symbols: SymbolTheme;
 	editorPaddingX?: number;
+	editorBorderStyle?: EditorBorderStyle;
 	/** Style function for inline hint/ghost text (dim text after cursor) */
 	hintStyle?: (text: string) => string;
 }
@@ -382,11 +385,12 @@ export class Editor implements Component, Focusable {
 
 	// Custom top border (for status line integration)
 	#topBorderContent?: EditorTopBorder;
-	#borderVisible = true;
+	#borderStyle: EditorBorderStyle = "box";
 
 	constructor(theme: EditorTheme) {
 		this.#theme = theme;
 		this.borderColor = theme.borderColor;
+		if (theme.editorBorderStyle) this.#borderStyle = theme.editorBorderStyle;
 	}
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
@@ -403,9 +407,17 @@ export class Editor implements Component, Focusable {
 
 	/**
 	 * Show or hide the editor border chrome.
+	 * @deprecated Use {@link setBorderStyle} instead.
 	 */
 	setBorderVisible(borderVisible: boolean): void {
-		this.#borderVisible = borderVisible;
+		this.#borderStyle = borderVisible ? "box" : "none";
+	}
+
+	/**
+	 * Set the editor border style.
+	 */
+	setBorderStyle(style: EditorBorderStyle): void {
+		this.#borderStyle = style;
 	}
 
 	setPromptGutter(promptGutter: string | undefined): void {
@@ -541,11 +553,12 @@ export class Editor implements Component, Focusable {
 	}
 
 	#getHorizontalChromeWidth(paddingX: number): number {
-		return this.#borderVisible ? paddingX + 1 : 0;
+		if (this.#borderStyle === "none") return 0;
+		return this.#borderStyle === "box" ? paddingX + 1 : paddingX;
 	}
 
 	#getPromptGutterWidth(width: number, paddingX: number): number {
-		if (this.#borderVisible || !this.#promptGutter) return 0;
+		if (this.#borderStyle !== "none" || !this.#promptGutter) return 0;
 		const chromeWidth = 2 * this.#getHorizontalChromeWidth(paddingX);
 		const availableWidth = Math.max(0, width - chromeWidth);
 		return Math.min(visibleWidth(this.#promptGutter), availableWidth);
@@ -555,7 +568,7 @@ export class Editor implements Component, Focusable {
 		width: number,
 		paddingX: number,
 	): { firstLine: string; continuation: string; width: number } | undefined {
-		if (this.#borderVisible || !this.#promptGutter) return undefined;
+		if (this.#borderStyle !== "none" || !this.#promptGutter) return undefined;
 		const gutterWidth = this.#getPromptGutterWidth(width, paddingX);
 		if (gutterWidth === 0) return undefined;
 		return {
@@ -572,14 +585,14 @@ export class Editor implements Component, Focusable {
 
 	#getLayoutWidth(width: number, paddingX: number): number {
 		const contentWidth = this.#getContentWidth(width, paddingX);
-		const cursorReserve = this.#borderVisible && paddingX === 0 ? 1 : 0;
+		const cursorReserve = this.#borderStyle !== "none" && paddingX === 0 ? 1 : 0;
 		// Keep cursor/scroll layout addressable even when a borderless prompt gutter consumes every visible column.
 		return Math.max(1, contentWidth - cursorReserve);
 	}
 
 	#getVisibleContentHeight(contentLines: number): number {
 		if (this.#maxHeight === undefined) return contentLines;
-		const verticalChrome = this.#borderVisible ? 2 : 0;
+		const verticalChrome = this.#borderStyle !== "none" ? 2 : 0;
 		return Math.max(1, this.#maxHeight - verticalChrome);
 	}
 
@@ -675,7 +688,9 @@ export class Editor implements Component, Focusable {
 
 	render(width: number): string[] {
 		const paddingX = this.#getEditorPaddingX();
-		const borderVisible = this.#borderVisible;
+		const borderStyle = this.#borderStyle;
+		const hasBorder = borderStyle !== "none";
+		const hasBoxSides = borderStyle === "box";
 		const promptGutter = this.#getPromptGutter(width, paddingX);
 		const contentAreaWidth = this.#getContentWidth(width, paddingX);
 		const layoutWidth = this.#getLayoutWidth(width, paddingX);
@@ -697,24 +712,34 @@ export class Editor implements Component, Focusable {
 
 		const result: string[] = [];
 
-		if (borderVisible) {
-			// Render top border: ╭─ [status content] ────────────────╮
+		if (hasBorder) {
 			const topFillWidth = Math.max(0, width - borderWidth * 2);
-			if (this.#topBorderContent) {
-				const { content, width: statusWidth } = this.#topBorderContent;
-				if (statusWidth <= topFillWidth) {
-					// Status fits - add fill after it
-					const fillWidth = topFillWidth - statusWidth;
-					result.push(topLeft + content + this.borderColor(box.horizontal.repeat(fillWidth)) + topRight);
+			if (hasBoxSides) {
+				// Render top border: ┌─ [status content] ────────────────┐
+				if (this.#topBorderContent) {
+					const { content, width: statusWidth } = this.#topBorderContent;
+					if (statusWidth <= topFillWidth) {
+						const fillWidth = topFillWidth - statusWidth;
+						result.push(topLeft + content + this.borderColor(box.horizontal.repeat(fillWidth)) + topRight);
+					} else {
+						const truncated = truncateToWidth(content, Math.max(0, topFillWidth - 1));
+						const truncatedWidth = visibleWidth(truncated);
+						const fillWidth = Math.max(0, topFillWidth - truncatedWidth);
+						result.push(topLeft + truncated + this.borderColor(box.horizontal.repeat(fillWidth)) + topRight);
+					}
 				} else {
-					// Status too long - truncate it
-					const truncated = truncateToWidth(content, Math.max(0, topFillWidth - 1));
-					const truncatedWidth = visibleWidth(truncated);
-					const fillWidth = Math.max(0, topFillWidth - truncatedWidth);
-					result.push(topLeft + truncated + this.borderColor(box.horizontal.repeat(fillWidth)) + topRight);
+					result.push(topLeft + horizontal.repeat(topFillWidth) + topRight);
 				}
 			} else {
-				result.push(topLeft + horizontal.repeat(topFillWidth) + topRight);
+				// Horizontal-only: plain ──── line, with status content if present
+				if (this.#topBorderContent) {
+					const { content, width: statusWidth } = this.#topBorderContent;
+					const padLeft = this.borderColor(box.horizontal.repeat(paddingX));
+					const fillWidth = Math.max(0, width - paddingX - statusWidth);
+					result.push(padLeft + content + this.borderColor(box.horizontal.repeat(fillWidth)));
+				} else {
+					result.push(this.borderColor(box.horizontal.repeat(width)));
+				}
 			}
 		}
 
@@ -740,12 +765,12 @@ export class Editor implements Component, Focusable {
 			const hasCursor = layoutLine.hasCursor && layoutLine.cursorPos !== undefined;
 			const marker = emitCursorMarker ? CURSOR_MARKER : "";
 
-			if (!borderVisible && displayWidth > lineContentWidth) {
+			if (!hasBorder && displayWidth > lineContentWidth) {
 				displayText = sliceByColumn(displayText, 0, lineContentWidth, true);
 				displayWidth = visibleWidth(displayText);
 			}
 
-			if (!borderVisible && lineContentWidth === 0) {
+			if (!hasBorder && lineContentWidth === 0) {
 				if (hasCursor && !this.#useTerminalCursor) {
 					const zeroWidthCursorBudget = visibleWidth(gutterText);
 					const zeroWidthCursorReplacement = this.cursorOverride
@@ -792,7 +817,7 @@ export class Editor implements Component, Focusable {
 						const hintText = hintStyle(truncateToWidth(inlineHint, Math.max(0, lineContentWidth - displayWidth)));
 						displayText = before + marker + hintText;
 						displayWidth += visibleWidth(inlineHint);
-					} else if (after.length === 0 && !borderVisible && displayWidth >= lineContentWidth) {
+					} else if (after.length === 0 && !hasBorder && displayWidth >= lineContentWidth) {
 						displayText = this.#renderTerminalCursorMarker(before, marker, lineContentWidth);
 					} else {
 						displayText = before + marker + after;
@@ -814,7 +839,7 @@ export class Editor implements Component, Focusable {
 				} else if (this.cursorOverride) {
 					// Cursor override replaces the normal end-of-text cursor glyph
 					const overrideWidth = this.cursorOverrideWidth ?? 1;
-					if (!borderVisible && displayWidth + overrideWidth > lineContentWidth) {
+					if (!hasBorder && displayWidth + overrideWidth > lineContentWidth) {
 						// Borderless editors have no spare padding cell for an end-of-line cursor glyph.
 						// Preserve cursorOverride by replacing the tail of the line with it.
 						const widthLimitedCursor = this.#renderEndOfLineCursorAtWidthLimit(before, marker, lineContentWidth, {
@@ -835,7 +860,7 @@ export class Editor implements Component, Focusable {
 				} else {
 					// Cursor is at the end - add thin cursor glyph
 					const { text: cursor, width: cursorWidth } = this.#getStyledInputCursor();
-					if (!borderVisible && displayWidth + cursorWidth > lineContentWidth) {
+					if (!hasBorder && displayWidth + cursorWidth > lineContentWidth) {
 						// Borderless editors have no spare padding cell for an end-of-line cursor glyph.
 						// Highlight the last grapheme so the cursor stays visible without consuming width.
 						const widthLimitedCursor = this.#renderEndOfLineCursorAtWidthLimit(before, marker, lineContentWidth);
@@ -858,7 +883,7 @@ export class Editor implements Component, Focusable {
 
 			const linePad = padding(Math.max(0, lineContentWidth - displayWidth));
 
-			if (!borderVisible) {
+			if (!hasBorder) {
 				result.push(gutterText + displayText + linePad);
 				continue;
 			}
@@ -866,16 +891,26 @@ export class Editor implements Component, Focusable {
 			// All lines have consistent borders based on padding
 			const isLastLine = visibleIndex === visibleLayoutLines.length - 1;
 			const rightPaddingWidth = Math.max(0, paddingX - (cursorInPadding ? 1 : 0));
-			if (isLastLine) {
-				const bottomRightPadding = Math.max(0, paddingX - 1 - (cursorInPadding ? 1 : 0));
-				const bottomRightAdjusted = this.borderColor(
-					`${padding(bottomRightPadding)}${box.horizontal}${box.bottomRight}`,
-				);
-				result.push(`${bottomLeft}${displayText}${linePad}${bottomRightAdjusted}`);
+			if (hasBoxSides) {
+				if (isLastLine) {
+					const bottomRightPadding = Math.max(0, paddingX - 1 - (cursorInPadding ? 1 : 0));
+					const bottomRightAdjusted = this.borderColor(
+						`${padding(bottomRightPadding)}${box.horizontal}${box.bottomRight}`,
+					);
+					result.push(`${bottomLeft}${displayText}${linePad}${bottomRightAdjusted}`);
+				} else {
+					const leftBorder = this.borderColor(`${box.vertical}${padding(paddingX)}`);
+					const rightBorder = this.borderColor(`${padding(rightPaddingWidth)}${box.vertical}`);
+					result.push(leftBorder + displayText + linePad + rightBorder);
+				}
 			} else {
-				const leftBorder = this.borderColor(`${box.vertical}${padding(paddingX)}`);
-				const rightBorder = this.borderColor(`${padding(rightPaddingWidth)}${box.vertical}`);
-				result.push(leftBorder + displayText + linePad + rightBorder);
+				// Horizontal-only: no side borders, just padded content
+				const leftPad = padding(paddingX);
+				result.push(leftPad + displayText + linePad);
+				if (isLastLine) {
+					// Add bottom horizontal line after the last content line
+					result.push(this.borderColor(box.horizontal.repeat(width)));
+				}
 			}
 		}
 

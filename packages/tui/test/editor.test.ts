@@ -1136,6 +1136,37 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Horizontal border style", () => {
+		it("renders top and bottom horizontal lines without side borders", () => {
+			const editor = new Editor({ ...defaultEditorTheme, editorBorderStyle: "horizontal" });
+			const width = 20;
+			editor.setText("hello");
+			const lines = editor.render(width);
+
+			// First line: top horizontal line (no corner chars)
+			const topLine = stripVTControlCharacters(lines[0]!);
+			expect(topLine).toBe("-".repeat(width));
+
+			// Content line: starts with padding spaces (no left border char)
+			const contentLine = stripVTControlCharacters(lines[1]!.replaceAll(CURSOR_MARKER, ""));
+			expect(contentLine.startsWith("  ")).toBeTrue(); // paddingX=2 default
+			expect(visibleWidth(lines[1]!.replaceAll(CURSOR_MARKER, ""))).toBeLessThanOrEqual(width);
+
+			// Last line: bottom horizontal line
+			const bottomLine = stripVTControlCharacters(lines[lines.length - 1]!);
+			expect(bottomLine).toBe("-".repeat(width));
+		});
+
+		it("does not render corner characters in horizontal mode", () => {
+			const editor = new Editor({ ...defaultEditorTheme, editorBorderStyle: "horizontal" });
+			const width = 20;
+			editor.setText("test");
+			const lines = editor.render(width);
+			const allText = lines.map(l => stripVTControlCharacters(l)).join("");
+			expect(allText).not.toContain("+"); // test theme uses + for corners
+		});
+	});
+
 	describe("Word wrapping", () => {
 		function renderContentLines(editor: Editor, width: number): string[] {
 			// Move cursor to start so the rendered cursor does not affect line padding/borders.

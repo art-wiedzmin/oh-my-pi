@@ -3,7 +3,12 @@ import { type Component, truncateToWidth, visibleWidth } from "@oh-my-pi/pi-tui"
 import { formatCount, getProjectDir } from "@oh-my-pi/pi-utils";
 import { $ } from "bun";
 import { settings } from "../../config/settings";
-import type { StatusLinePreset, StatusLineSegmentId, StatusLineSeparatorStyle } from "../../config/settings-schema";
+import type {
+	StatusLinePosition,
+	StatusLinePreset,
+	StatusLineSegmentId,
+	StatusLineSeparatorStyle,
+} from "../../config/settings-schema";
 import { theme } from "../../modes/theme/theme";
 import type { AgentSession } from "../../session/agent-session";
 import * as git from "../../utils/git";
@@ -550,7 +555,62 @@ export class StatusLineComponent implements Component {
 		};
 	}
 
+	getPosition(): StatusLinePosition {
+		return settings.get("statusLine.position");
+	}
+
+	/**
+	 * Render status info as multi-line content below the editor.
+	 * Line 1: path + git (left-aligned)
+	 * Line 2: context info (left), model + thinking (right)
+	 */
+	renderBelowEditor(width: number): string[] {
+		const ctx = this.#buildSegmentContext(width);
+		const lines: string[] = [];
+
+		// Line 1: path + git
+		const pathSeg = renderSegment("path", ctx);
+		const gitSeg = renderSegment("git", ctx);
+		const line1Parts: string[] = [];
+		if (pathSeg.visible && pathSeg.content) line1Parts.push(pathSeg.content);
+		if (gitSeg.visible && gitSeg.content) line1Parts.push(theme.fg("dim", "(") + gitSeg.content + theme.fg("dim", ")"));
+		if (line1Parts.length > 0) {
+			lines.push(theme.fg("dim", truncateToWidth(line1Parts.join(" "), width)));
+		}
+
+		// Line 2: cost + context (left), model + thinking (right)
+		const costSeg = renderSegment("cost", ctx);
+		const contextSeg = renderSegment("context_pct", ctx);
+		const modelSeg = renderSegment("model", ctx);
+		const leftParts: string[] = [];
+		if (costSeg.visible && costSeg.content) leftParts.push(costSeg.content);
+		if (contextSeg.visible && contextSeg.content) leftParts.push(contextSeg.content);
+		const rightParts: string[] = [];
+		if (modelSeg.visible && modelSeg.content) rightParts.push(modelSeg.content);
+
+		const leftStr = theme.fg("dim", leftParts.join(" "));
+		const rightStr = theme.fg("dim", rightParts.join(" "));
+		const leftWidth = visibleWidth(leftStr);
+		const rightWidth = visibleWidth(rightStr);
+		const gap = Math.max(1, width - leftWidth - rightWidth);
+		lines.push(leftStr + " ".repeat(gap) + rightStr);
+
+		// Hook statuses (same as regular render)
+		const showHooks = this.#settings.showHookStatus ?? true;
+		if (showHooks && this.#hookStatuses.size > 0) {
+			const sortedStatuses = Array.from(this.#hookStatuses.entries())
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([, text]) => sanitizeStatusText(text));
+			lines.push(truncateToWidth(sortedStatuses.join(" "), width));
+		}
+
+		return lines;
+	}
+
 	render(width: number): string[] {
+		if (this.getPosition() === "below-editor") {
+			return this.renderBelowEditor(width);
+		}
 		// Only render hook statuses - main status is in editor's top border
 		const showHooks = this.#settings.showHookStatus ?? true;
 		if (!showHooks || this.#hookStatuses.size === 0) {
