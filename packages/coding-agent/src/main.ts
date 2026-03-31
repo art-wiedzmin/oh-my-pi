@@ -852,12 +852,12 @@ export async function runRootCommand(
 		const sessions = await logger.time("SessionManager.list", SessionManager.list, cwd, parsedArgs.sessionDir);
 		if (sessions.length === 0) {
 			process.stdout.write(`${chalk.dim("No sessions found")}\n`);
-			return;
+			process.exit(0);
 		}
 		const selectedPath = await logger.time("selectSession", selectSession, sessions);
 		if (!selectedPath) {
 			process.stdout.write(`${chalk.dim("No session selected")}\n`);
-			return;
+			process.exit(0);
 		}
 		sessionManager = await SessionManager.open(selectedPath);
 	}
