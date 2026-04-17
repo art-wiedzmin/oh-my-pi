@@ -7,39 +7,36 @@ This repo has a custom branch `wiedzmin/custom` (fork: `art-wiedzmin/oh-my-pi`) 
 - **Remote `origin`**: `can1357/oh-my-pi` (upstream)
 - **Remote `fork`**: `art-wiedzmin/oh-my-pi` (our fork)
 - **Branch `wiedzmin/custom`**: our patches, rebased on `origin/main`
-- **PR branch `fix/skill-basedir-windows`**: upstream fix (PR #554), will be deleted after merge
 
 ## Custom Patches
 
-Three commits on top of upstream main:
+Six commits on top of upstream main, grouped by concern:
 
-### 1. Skill baseDir Windows fix (PR #554)
+### TTSR per-session + gitignore-free config discovery (`e93e9b521`)
 
-**File:** `packages/coding-agent/src/extensibility/skills.ts`
+**`packages/coding-agent/src/sdk.ts`** — commented out `ttsrManager.restoreInjected(existingSession.injectedTtsrRules)` in the `discoverTtsrRules` block. Without this, TTSR injection state bleeds across sessions in the same workspace — once a rule fires in session A, it's marked as "already fired" in session B, so parallel agents get the rule exactly once total instead of once each.
 
-`skill.baseDir` is computed by stripping `SKILL.md` from the path. The upstream regex `/\/SKILL\.md$/` only matches forward slashes — fails on Windows backslash paths. Fix: `[/\\]SKILL\.md$`.
+Search: `restoreInjected` or `Disabled: TTSR state is per-session`.
 
-Three occurrences (lines ~57, ~171, ~207). Search for `SKILL\.md`.
+**`packages/coding-agent/src/discovery/helpers.ts`** — `loadFilesFromDir` default for `gitignore` is `false`. Upstream hardcodes `gitignore: true`, which hides `.omp/rules/` in projects with catch-all `*` gitignore. OMP config files are not project source.
 
-### 2. TTSR per-session state + gitignore-free config discovery
+Search: `gitignore` in `loadFilesFromDir` options.
 
-**File:** `packages/coding-agent/src/sdk.ts`
+### WiedzminVer branding (`1d2422c9d`)
 
-Commented out `ttsrManager.restoreInjected(existingSession.injectedTtsrRules)` in `discoverTtsrRules` block (~line 794). Without this, TTSR injection state bleeds across sessions in the same workspace — once a rule fires in session A, it's marked as "already fired" in session B. With parallel agents, this makes TTSR rules fire only once across all agents instead of once per agent.
+**`packages/coding-agent/src/modes/components/welcome.ts`** — `| WiedzminVer` label next to `Tips` on home screen (~line 123). Color: `customMessageLabel` (purple/pink `#c678dd` in dark-one theme).
 
-Search for `restoreInjected` or `Disabled: TTSR state is per-session`.
+### This doc (`50ee45fdc`)
 
-**File:** `packages/coding-agent/src/discovery/helpers.ts`
+**`.omp/AGENTS.md`** — patch docs and build instructions.
 
-Changed `loadFilesFromDir` default for `gitignore` from `true` to `false`. The upstream glob uses `gitignore: true`, which causes `.omp/rules/` files to be invisible when `.omp/` is gitignored (common in projects with catch-all `*` gitignore). OMP config files are not project source code and should not be subject to gitignore filtering.
+### Editor borders (`92861c21b`)
 
-Search for `gitignore` in `loadFilesFromDir` options.
+Horizontal editor borders, below-editor status line, `EditorBorderStyle` enum. Multiple files under `packages/coding-agent/src/modes/`.
 
-### 3. WiedzminVer branding
+### `process.exit(0)` on `--resume` early returns (`66b44da75`)
 
-**File:** `packages/coding-agent/src/modes/components/welcome.ts`
-
-Added `| WiedzminVer` label next to `Tips` on the home screen (~line 123). Color: `customMessageLabel` (purple/pink `#c678dd` in dark-one theme).
+Process hangs on background marketplace refresh when `--resume` bails early. Explicit `process.exit(0)` on the early-return paths in the CLI entry.
 
 ## Build Process
 
@@ -54,7 +51,7 @@ cp "$LOCALAPPDATA/omp/pi_natives.win32-x64-baseline.node" packages/natives/nativ
 Build:
 ```bash
 bun --cwd=packages/natives run embed:native \
-  && bun build --compile --define PI_COMPILED=true --root . \
+  && bun build --compile --define PI_COMPILED=true --external mupdf --root . \
      ./packages/coding-agent/src/cli.ts \
      --outfile packages/coding-agent/dist/omp \
   && bun --cwd=packages/natives run embed:native --reset
@@ -72,13 +69,12 @@ mv -Force "$env:LOCALAPPDATA\omp\omp-patched.exe" "$env:LOCALAPPDATA\omp\omp.exe
 ```bash
 git fetch origin
 git rebase origin/main
-# Resolve conflicts if any — patches are in 4 files:
-#   skills.ts, sdk.ts, helpers.ts, welcome.ts
+# Resolve conflicts if any — patches touch:
+#   sdk.ts, helpers.ts, welcome.ts, cli.ts, settings-schema.ts, settings-defs.ts
 # Rebuild (see above)
 ```
 
 After rebase, verify patches are intact:
-- `skills.ts`: `[/\\]SKILL\.md$` (not `/SKILL\.md$`)
 - `sdk.ts`: `restoreInjected` is commented out
 - `helpers.ts`: `gitignore = false` default in `loadFilesFromDir`
 - `welcome.ts`: `WiedzminVer` label present
