@@ -13,6 +13,7 @@
 ### Fixed
 
 - Fixed transcript scrollback stability on terminals with eager erase risk so completed assistant messages remain stable while new streaming lines are rendering
+- Fixed Windows scrollback breakage where resuming a session (`omp --resume`) showed only the last message and Ctrl+O tool-output expand/collapse stranded the grown rows above an unscrollable viewport. On native Windows the host viewport position is unobservable, so these deliberate offscreen mutations were downgraded to a viewport-only repaint and never reached terminal scrollback. The resume transcript rebuild and the Ctrl+O toggle now request a `commitNativeScrollback` render, committing the full transcript to native scrollback. Incidental typing still defers (anti-yank guard intact).
 - Fixed Ctrl+R history search results to remain globally sorted by prompt recency after merging FTS prefix matches with substring fallback matches.
 - Fixed Exa web search with no stored or environment credential to use the public Exa MCP fallback again, preserving the auth storage → `EXA_API_KEY` → `mcp.exa.ai` resolution order ([#1860](https://github.com/can1357/oh-my-pi/issues/1860)).
 - Fixed ACP plan-mode writes to `local://PLAN.md` so session-local plan artifacts are written to OMP's local artifact root instead of being routed through the editor `writeTextFile` bridge, avoiding Zen's `Internal error` and making the plan readable after creation ([#1863](https://github.com/can1357/oh-my-pi/issues/1863)).

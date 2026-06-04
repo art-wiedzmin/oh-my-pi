@@ -158,6 +158,17 @@ export interface RenderRequestOptions {
 	 * `requestRender()` calls must continue to omit this flag.
 	 */
 	allowUnknownViewportMutation?: boolean;
+	/**
+	 * Mark this render as a deliberate scrollback-committing user action (Ctrl+O
+	 * expand/collapse, a full transcript rebuild on resume/branch/reload). On
+	 * native win32 — where `Terminal#isNativeViewportAtBottom()` cannot answer —
+	 * this is the only signal that promotes the frame to a live history rebuild;
+	 * incidental input (typing, arrows) sets `allowUnknownViewportMutation`
+	 * alone and keeps deferring so a scrolled reader is never yanked. Implies
+	 * `allowUnknownViewportMutation`. POSIX is unaffected (it already commits on
+	 * the soft flag).
+	 */
+	commitNativeScrollback?: boolean;
 }
 
 /** Options for deferred native scrollback rebuild checkpoints. */
@@ -425,6 +436,16 @@ export class TUI extends Container {
 	#clearScrollbackOnNextRender = false;
 	#forceViewportRepaintOnNextRender = false;
 	#allowUnknownViewportMutationOnNextRender = false;
+	// Set by a render request that is a *deliberate scrollback-committing user
+	// action* (Ctrl+O expand/collapse, a full transcript rebuild on resume) — as
+	// opposed to incidental input (typing, arrows) which only sets
+	// #allowUnknownViewportMutationOnNextRender. On native win32 the viewport
+	// position is unobservable, so this explicit signal — not the soft keystroke
+	// flag — is the green light for a live scrollback rebuild, mirroring the
+	// prompt-submit checkpoint. Set per-frame in #doRender, read by
+	// #canRebuildNativeScrollbackLive.
+	#commitNativeScrollbackOnNextRender = false;
+	#commitNativeScrollbackThisRender = false;
 	#eagerNativeScrollbackRebuild = false;
 	// Set when eager mode is switched off; applied after the next frame is
 	// classified so teardown frames from the same event batch still render
@@ -922,8 +943,13 @@ export class TUI extends Container {
 	}
 
 	requestRender(force = false, options?: RenderRequestOptions): void {
-		const allowUnknownViewportMutation = options?.allowUnknownViewportMutation === true;
+		const commitNativeScrollback = options?.commitNativeScrollback === true;
+		// commitNativeScrollback implies the soft flag: #nativeViewportIsScrolled
+		// must read "not scrolled" so the structural mutation reaches the rebuild
+		// path instead of an early viewport repaint.
+		const allowUnknownViewportMutation = options?.allowUnknownViewportMutation === true || commitNativeScrollback;
 		this.#allowUnknownViewportMutationOnNextRender ||= allowUnknownViewportMutation;
+		this.#commitNativeScrollbackOnNextRender ||= commitNativeScrollback;
 		if (force) {
 			this.#prepareForcedRender(options?.clearScrollback === true, allowUnknownViewportMutation);
 			this.#renderRequested = true;
@@ -1432,6 +1458,8 @@ export class TUI extends Container {
 			(resizeEventOccurred && this.#previousHeight > 0);
 		const eagerEraseScrollbackRisk = process.platform !== "win32" && TERMINAL.eagerEraseScrollbackRisk;
 		const eagerRebuildAllowed = this.#eagerNativeScrollbackRebuild && !eagerEraseScrollbackRisk;
+		this.#commitNativeScrollbackThisRender = this.#commitNativeScrollbackOnNextRender;
+		this.#commitNativeScrollbackOnNextRender = false;
 		const allowUnknownViewportMutation = this.#allowUnknownViewportMutationOnNextRender || eagerRebuildAllowed;
 		this.#allowUnknownViewportMutationOnNextRender = false;
 
@@ -2121,18 +2149,26 @@ export class TUI extends Container {
 	 * this, every offscreen transcript edit while streaming wiped scrollback and
 	 * yanked a scrolled-up reader out of their current context.
 	 * `allowUnknownViewportMutation` (autocomplete/IME) opts directly
-	 * user-driven POSIX frames back into the rebuild. Native Windows and Windows
-	 * Terminal still cannot trust an unknown probe during live rendering — ConPTY
-	 * may be fronting host scrollback we cannot observe — so they keep deferring.
+	 * user-driven POSIX frames back into the rebuild.
+	 *
+	 * Native Windows / Windows Terminal cannot trust the *merged* flag during
+	 * live rendering — eager streaming and incidental keystrokes set it too, and
+	 * ConPTY fronts host scrollback we cannot observe, so a streamed/typed
+	 * rebuild would yank a scrolled reader (#1635/#1746). Only a deliberate
+	 * scrollback-committing action (`#commitNativeScrollbackThisRender`: Ctrl+O
+	 * expand/collapse, a resume transcript rebuild) is trusted there, mirroring
+	 * the prompt-submit checkpoint ({@link #canReplayNativeScrollbackAtCheckpoint}).
+	 * That promotes those frames to a clean history rebuild instead of stranding
+	 * the grown rows above an unscrollable viewport.
 	 */
 	#canRebuildNativeScrollbackLive(
 		nativeViewportAtBottom: boolean | undefined,
 		allowUnknownViewportMutation: boolean,
 	): boolean {
-		return (
-			nativeViewportAtBottom === true ||
-			(nativeViewportAtBottom === undefined && allowUnknownViewportMutation && process.platform !== "win32")
-		);
+		if (nativeViewportAtBottom === true) return true;
+		if (nativeViewportAtBottom !== undefined) return false;
+		if (process.platform === "win32") return this.#commitNativeScrollbackThisRender;
+		return allowUnknownViewportMutation;
 	}
 
 	#padDeferredShrinkLines(lines: string[], paddedLength: number): string[] {

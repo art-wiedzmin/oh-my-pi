@@ -9,6 +9,7 @@
 ### Fixed
 
 - Kept streaming lines outside the declared stable prefix out of native scrollback so only newly stable output is committed without clearing existing terminal history
+- Fixed native scrollback never being committed for deliberate offscreen mutations on Windows (`process.platform === "win32"`), where the host viewport position is unobservable: added a `commitNativeScrollback` render-request option that promotes a frame to a clean live history rebuild (it implies `allowUnknownViewportMutation`). Without an explicit commit signal, win32 still defers incidental input (typing, arrow keys) to the prompt-submit checkpoint, preserving the anti-yank guard (#1635/#1746). POSIX behavior is unchanged.
 
 ## [15.9.0] - 2026-06-04
 

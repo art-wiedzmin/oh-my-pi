@@ -465,7 +465,13 @@ export class UiHelpers {
 		}
 
 		this.ctx.pendingTools.clear();
-		this.ctx.ui.requestRender();
+		// Full-transcript rebuild (resume, branch, reload, navigate, thinking
+		// toggle): always a user action with the host pinned to the bottom. On
+		// native win32 the viewport is unobservable, so without this signal the
+		// rebuild downgrades to a viewport-only repaint and the transcript above
+		// the fold never reaches native scrollback (resume showed only the last
+		// message; the user could not scroll up).
+		this.ctx.ui.requestRender(false, { commitNativeScrollback: true });
 	}
 
 	renderInitialMessages(prebuiltContext?: SessionContext, options: RenderInitialMessagesOptions = {}): void {

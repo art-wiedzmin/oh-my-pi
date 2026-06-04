@@ -808,7 +808,11 @@ export class InputController {
 				child.setExpanded(expanded);
 			}
 		}
-		this.ctx.ui.requestRender(false, { allowUnknownViewportMutation: true });
+		// Ctrl+O expand/collapse re-lays-out offscreen tool calls. On native win32
+		// (unobservable viewport) this deliberate action must commit to native
+		// scrollback, otherwise the grown rows strand above an unscrollable
+		// viewport. commitNativeScrollback implies allowUnknownViewportMutation.
+		this.ctx.ui.requestRender(false, { commitNativeScrollback: true });
 	}
 
 	toggleThinkingBlockVisibility(): void {
