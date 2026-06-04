@@ -19,18 +19,6 @@ class MutableBlock implements Component {
 	}
 }
 
-class StableBlock extends MutableBlock {
-	#stableLineCount = 0;
-
-	setStableLineCount(count: number): void {
-		this.#stableLineCount = count;
-	}
-
-	getStableLineCount(): number {
-		return this.#stableLineCount;
-	}
-}
-
 const riskFlag = TERMINAL as unknown as { eagerEraseScrollbackRisk: boolean };
 const original = riskFlag.eagerEraseScrollbackRisk;
 
@@ -65,22 +53,27 @@ describe("TranscriptContainer", () => {
 		expect(container.render(40)).toEqual(["a2", "b2"]);
 	});
 
-	it("reports frozen blocks plus the live block's immutable prefix", () => {
+	it("seals the prior block at its final content when finalize+append coalesce (ED3-risk)", () => {
 		riskFlag.eagerEraseScrollbackRisk = true;
 		const container = new TranscriptContainer();
-		const frozen = new MutableBlock(["a1", "a2"]);
-		const live = new StableBlock(["b1", "b2", "b3"]);
-		live.setStableLineCount(1);
-		container.addChild(frozen);
-		container.addChild(live);
+		const a = new MutableBlock(["Nat"]);
+		container.addChild(a);
+		// `a` streamed a partial chunk and rendered while live.
+		expect(container.render(40)).toEqual(["Nat"]);
 
-		expect(container.render(40)).toEqual(["a1", "a2", "b1", "b2", "b3"]);
-		expect(container.getStableLineCount(40)).toBe(3);
+		// TUI render coalescing: `a` finalizes AND a newer block is appended within
+		// one throttled frame, so no render happens between the two mutations.
+		a.set(["Natives built, now..."]);
+		const b = new MutableBlock(["b1"]);
+		container.addChild(b);
 
-		frozen.set(["a-mutated"]);
-		live.setStableLineCount(3);
-		expect(container.render(40)).toEqual(["a1", "a2", "b1", "b2", "b3"]);
-		expect(container.getStableLineCount(40)).toBe(5);
+		// The transition frame must seal `a` at its final content, not the stale
+		// mid-stream snapshot ("Nat") it last rendered while live.
+		expect(container.render(40)).toEqual(["Natives built, now...", "b1"]);
+
+		// Once sealed, a later re-layout of `a` stays frozen until the next thaw.
+		a.set(["a-collapsed"]);
+		expect(container.render(40)).toEqual(["Natives built, now...", "b1"]);
 	});
 
 	it("thaw() reconciles frozen blocks to their current state", () => {

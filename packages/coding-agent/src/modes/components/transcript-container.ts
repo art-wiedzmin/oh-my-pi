@@ -38,9 +38,11 @@ export class TranscriptContainer extends Container {
 	// Bumped to invalidate every block's snapshot at once; a snapshot is only
 	// honored when its stored generation still matches.
 	#generation = 0;
-	#lastRenderWidth = 0;
-	#lastChildLineCounts: number[] = [];
-	#lastChildStableCounts: number[] = [];
+	// The block that was bottom-most (live) on the previous render. When the live
+	// position moves past it, its snapshot was last refreshed mid-stream and may
+	// predate content that finalized in the same coalesced frame that appended the
+	// block now below it — so it must recompute once on the live→frozen transition.
+	#prevLiveChild: Component | undefined;
 
 	override invalidate(): void {
 		// A theme/global invalidation forces a full recompute on the rebuild that
@@ -66,52 +68,42 @@ export class TranscriptContainer extends Container {
 
 	override render(width: number): string[] {
 		width = Math.max(1, width);
+		if (!TERMINAL.eagerEraseScrollbackRisk) return super.render(width);
 
 		const lines: string[] = [];
-		const counts: number[] = [];
-		const stableCounts: number[] = [];
 		const liveIndex = this.children.length - 1;
+		const liveChild = this.children[liveIndex];
+		const prevLiveChild = this.#prevLiveChild;
+		this.#prevLiveChild = liveChild;
 		for (let i = 0; i < this.children.length; i++) {
 			const child = this.children[i]! as Component & SnapshotCarrier;
-			let rendered: string[] | undefined;
-			if (TERMINAL.eagerEraseScrollbackRisk && i !== liveIndex) {
+			if (child !== liveChild) {
 				const snapshot = child[kSnapshot];
 				// Replay the block's last render from while it was live. A stale
 				// generation (post-thaw) or width mismatch (resize in flight, an
 				// explicit rebuild that reconciles history anyway) recomputes instead.
-				if (snapshot && snapshot.generation === this.#generation && snapshot.width === width) {
-					rendered = snapshot.lines;
+				// The block that was live on the previous render is also recomputed
+				// here: TUI render coalescing can advance its content (final streamed
+				// tokens) in the very frame that appends the block now below it, so its
+				// cached snapshot predates that final content. Recomputing on the
+				// transition seals the block at its true final state, not a mid-stream one.
+				if (
+					child !== prevLiveChild &&
+					snapshot &&
+					snapshot.generation === this.#generation &&
+					snapshot.width === width
+				) {
+					lines.push(...snapshot.lines);
+					continue;
 				}
 			}
-			rendered ??= child.render(width);
-			if (TERMINAL.eagerEraseScrollbackRisk) {
-				// Cache every block's latest render. While a block is live this keeps
-				// its snapshot current; the frame it stops being live the cache already
-				// holds its final live render, so nothing recomputes underneath it.
-				child[kSnapshot] = { width, lines: rendered, generation: this.#generation };
-			}
-			const stable = i === liveIndex ? (child.getStableLineCount?.(width) ?? 0) : rendered.length;
-			counts.push(rendered.length);
-			stableCounts.push(Math.max(0, Math.min(rendered.length, stable)));
+			const rendered = child.render(width);
+			// Cache every block's latest render. While a block is live this keeps its
+			// snapshot current; on the frame it stops being live the recompute above
+			// refreshes it to the final state before it freezes.
+			child[kSnapshot] = { width, lines: rendered, generation: this.#generation };
 			lines.push(...rendered);
 		}
-		this.#lastRenderWidth = width;
-		this.#lastChildLineCounts = counts;
-		this.#lastChildStableCounts = stableCounts;
 		return lines;
-	}
-
-	getStableLineCount(width: number): number {
-		if (this.#lastRenderWidth !== Math.max(1, width) || this.#lastChildLineCounts.length !== this.children.length) {
-			return 0;
-		}
-		let stable = 0;
-		for (let i = 0; i < this.#lastChildLineCounts.length; i++) {
-			const length = this.#lastChildLineCounts[i] ?? 0;
-			const childStable = this.#lastChildStableCounts[i] ?? 0;
-			stable += childStable;
-			if (childStable < length) break;
-		}
-		return stable;
 	}
 }

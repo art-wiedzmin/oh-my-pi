@@ -399,9 +399,6 @@ export class InteractiveMode implements InteractiveModeContext {
 		// unless the user opts in, and never emits raw escapes on other terminals.
 		setTerminalTextSizing(settings.get("tui.textSizing") && TERMINAL.textSizing);
 		this.chatContainer = new TranscriptContainer();
-		if (TERMINAL.eagerEraseScrollbackRisk) {
-			this.ui.setNativeScrollbackStableComponent(this.chatContainer);
-		}
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.todoContainer = new Container();
@@ -610,7 +607,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		await this.initHooksAndCustomTools();
 
 		// Restore mode from session (e.g. plan mode on resume)
-		await this.#restoreModeFromSession();
+		this.session.setSessionSwitchReconciler?.(() => this.#reconcileModeFromSession());
+		await this.#reconcileModeFromSession();
 
 		// Restore unsent editor draft from previous session shutdown (Ctrl+D).
 		// One-shot: consumeDraft removes the sidecar after read so the next
@@ -1373,8 +1371,42 @@ export class InteractiveMode implements InteractiveModeContext {
 		}
 	}
 
-	/** Restore mode state from session entries on resume (e.g. plan mode). */
-	async #restoreModeFromSession(): Promise<void> {
+	async #clearTransientModeState(): Promise<void> {
+		if (this.planModeEnabled || this.planModePaused) {
+			if (this.#planModePreviousTools !== undefined) {
+				await this.session.setActiveToolsByName(this.#planModePreviousTools);
+			}
+			this.session.setStandingResolveHandler?.(null);
+			this.session.setPlanModeState(undefined);
+			this.planModeEnabled = false;
+			this.planModePaused = false;
+			this.planModePlanFilePath = undefined;
+			this.#planModePreviousTools = undefined;
+			this.#planModePreviousModelState = undefined;
+			this.#pendingModelSwitch = undefined;
+			this.#planModeHasEntered = false;
+			this.#updatePlanModeStatus();
+		}
+
+		if (this.goalModeEnabled || this.goalModePaused) {
+			if (this.#goalModePreviousTools !== undefined) {
+				await this.session.setActiveToolsByName(this.#goalModePreviousTools);
+			}
+			this.session.setGoalModeState(undefined);
+			this.goalModeEnabled = false;
+			this.goalModePaused = false;
+			this.#goalModePreviousTools = undefined;
+			this.#goalTurnHadToolCalls = false;
+			this.#goalContinuationTurnInFlight = false;
+			this.#goalSuppressNextContinuation = false;
+			this.#cancelGoalContinuation();
+			this.#updateGoalModeStatus();
+		}
+	}
+
+	/** Reconcile mode state from session entries on resume/switch. */
+	async #reconcileModeFromSession(): Promise<void> {
+		await this.#clearTransientModeState();
 		const sessionContext = this.sessionManager.buildSessionContext();
 		const goalEnabled = this.session.settings.get("goal.enabled");
 		if (!goalEnabled && (sessionContext.mode === "goal" || sessionContext.mode === "goal_paused")) {

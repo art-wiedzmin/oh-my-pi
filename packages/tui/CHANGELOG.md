@@ -1,15 +1,13 @@
 # Changelog
 
 ## [Unreleased]
-### Added
 
-- Added optional `Component#getStableLineCount(width)` method so components can report how many leading rendered rows are immutable
-- Added `TUI#setNativeScrollbackStableComponent(component)` to define the native-scrollback stability boundary for stability-aware rendering
-
+## [15.9.1] - 2026-06-04
 ### Fixed
 
 - Kept streaming lines outside the declared stable prefix out of native scrollback so only newly stable output is committed without clearing existing terminal history
 - Fixed native scrollback never being committed for deliberate offscreen mutations on Windows (`process.platform === "win32"`), where the host viewport position is unobservable: added a `commitNativeScrollback` render-request option that promotes a frame to a clean live history rebuild (it implies `allowUnknownViewportMutation`). Without an explicit commit signal, win32 still defers incidental input (typing, arrow keys) to the prompt-submit checkpoint, preserving the anti-yank guard (#1635/#1746). POSIX behavior is unchanged.
+- Fixed the OSC 11 appearance poll re-querying every 2s forever on terminals that support Mode 2031 but never change theme, whose repeated OSC 11/DA1 writes cleared the user's active text selection (breaking copy every 2 seconds). The poll now stops as soon as DECRQM confirms Mode 2031 support, since push notifications make polling redundant.
 
 ## [15.9.0] - 2026-06-04
 
