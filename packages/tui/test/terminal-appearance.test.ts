@@ -583,6 +583,26 @@ describe("ProcessTerminal DECRQM + in-band resize (DEC 2026/2048)", () => {
 		terminal.stop();
 	});
 
+	it("stops driving resize from the native stdout event once in-band resize is active", () => {
+		Object.defineProperty(process.stdout, "columns", { value: 100, configurable: true });
+		Object.defineProperty(process.stdout, "rows", { value: 30, configurable: true });
+		const { terminal, resizeCount } = setup();
+		// Before in-band: the native stdout 'resize' event drives the handler.
+		process.stdout.emit("resize");
+		expect(resizeCount()).toBe(1);
+		// Enable in-band via DECRPM supported.
+		process.stdin.emit("data", "\x1b[?2048;1$y");
+		const afterEnable = resizeCount();
+		// The native stdout 'resize' is now redundant and races the in-band report's
+		// geometry source, so it must no longer fire the handler.
+		process.stdout.emit("resize");
+		expect(resizeCount()).toBe(afterEnable);
+		// In-band reports remain the single authoritative resize source.
+		process.stdin.emit("data", "\x1b[48;31;120;620;1200t");
+		expect(resizeCount()).toBe(afterEnable + 1);
+		terminal.stop();
+	});
+
 	it("reassembles a DECRPM reply split across stdin reads", () => {
 		vi.useFakeTimers();
 		const { terminal, reports } = setup();

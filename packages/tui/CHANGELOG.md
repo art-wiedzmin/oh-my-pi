@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Fixed
+
+- Fixed flaky terminal resize on Windows Terminal (and other DEC 2048-capable hosts): once in-band resize activates, the renderer was driven by BOTH the in-band `CSI 48 t` report and the native `process.stdout` 'resize' event, which read different geometry sources and raced — a stdout-driven frame could render at stale `#reportedRows`, dropping the bottom rows when growing and committing duplicate history rows when shrinking. In-band resize is now the single resize source (the redundant stdout listener is removed when it activates); non-2048 terminals keep the stdout event unchanged.
 
 ## [15.9.1] - 2026-06-04
 ### Fixed

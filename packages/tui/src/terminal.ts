@@ -813,10 +813,23 @@ export class ProcessTerminal implements Terminal {
 	/**
 	 * Enable DEC 2048 in-band resize notifications. The terminal emits an initial
 	 * report immediately, seeding reported geometry and cell dimensions.
+	 *
+	 * Once in-band is the resize source, the native `process.stdout` 'resize'
+	 * event is redundant AND races: in-band reports carry exact geometry that the
+	 * `columns`/`rows` getters now read, and `#handleInBandResizeReport` updates
+	 * `#reportedRows`/`#reportedColumns` *before* it fires the handler. The stdout
+	 * event, by contrast, can fire/render before the matching in-band report lands,
+	 * so the handler renders at stale `#reportedRows` — on Windows Terminal that
+	 * surfaced as lost bottom rows when growing and duplicated history rows when
+	 * shrinking. Drop the stdout listener so in-band is the single source; stop()
+	 * already removes it (idempotent) for the non-2048 path.
 	 */
 	#enableInBandResize(): void {
 		if (this.#inBandResizeActive || this.#dead) return;
 		this.#inBandResizeActive = true;
+		if (this.#resizeHandler) {
+			process.stdout.removeListener("resize", this.#resizeHandler);
+		}
 		this.#safeWrite("\x1b[?2048h");
 	}
 
